@@ -1,0 +1,28 @@
+<html>
+<head>
+    <script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+</head>
+
+<body>
+<h3>WebSocket Go</h3>
+<input id="input" type="text" name="message">
+<button onclick="send()">Send</button>
+<pre id="output"></pre>
+
+<script>
+    url = 'ws://localhost:8080/ws';
+    c = new WebSocket(url);
+
+    send = function () {
+        let msg = $('#input').val();
+        $("#output").append("Me: " + msg + "\n");
+        c.send(msg)
+    };
+
+    c.onmessage = function (msg) {
+        $("#output").append("Others:" + msg.data + "\n");
+    }
+</script>
+
+</body>
+</html>

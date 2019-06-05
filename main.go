@@ -8,6 +8,8 @@ import (
 	"github.com/jinzhu/gorm"
 	_ "github.com/lib/pq"
 	"log"
+	"net/http"
+	"strconv"
 )
 
 var wsUpgrade = websocket.Upgrader{
@@ -51,7 +53,7 @@ func writeMsg(client *websocket.Conn, msg []byte, msgType int) {
 }
 
 func connectDB() *gorm.DB {
-	db, err := gorm.Open("postgres", "host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable")
+	db, err := gorm.Open("postgres", "host=localhost port=5432 user=postgres dbname=gorm password=123456 sslmode=disable search_path=myschema")
 	if err != nil {
 		log.Fatal("Server execute error: " + err.Error())
 	}
@@ -69,19 +71,53 @@ func pickItem(db *gorm.DB) []int {
 	db.Table("item").Pluck("id", &ids)
 	return ids
 }
+
+func getItems() []model.Item {
+	item1 := model.Item{
+		Id:   1,
+		Name: "abc",
+	}
+
+	item2 := model.Item{
+		Id:   2,
+		Name: "cdf",
+	}
+
+	return []model.Item{item1, item2}
+}
+
+var db *gorm.DB
+
 func main() {
-	db := connectDB()
-	getAllItems(db)
-	pickItem(db)
-	homepageViewPath := "home.html"
+	db = connectDB()
+	db.AutoMigrate(&model.Item{})
+	//getAllItems(db)
+	//pickItem(db)
+	//homepageViewPath := "home.html"
 	router := gin.Default()
-	router.LoadHTMLFiles(homepageViewPath)
+	router.LoadHTMLFiles("template/running-square.html")
+	router.Static("/static", "./template/static")
 	router.GET("/", func(context *gin.Context) {
-		context.HTML(200, homepageViewPath, nil)
+		context.HTML(200, "running-square.html", nil)
 	})
 	router.GET("/ws", wsHandler)
+
+	router.GET("/items", func(context *gin.Context) {
+		context.JSONP(http.StatusOK, getItems())
+	})
+
+	router.GET("/picking/:itemId", func(context *gin.Context) {
+		itemId, _ := strconv.ParseInt(context.Param("itemId"), 10, 32)
+
+		context.JSONP(http.StatusOK, checkingResult(itemId))
+	})
+
 	err := router.Run()
 	if err != nil {
 		log.Fatal("Server execute error: " + err.Error())
 	}
+}
+
+func checkingResult(itemId int64) bool {
+	return itemId%2 == 0
 }

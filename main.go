@@ -20,6 +20,7 @@ var wsUpgrade = websocket.Upgrader{
 }
 
 var clients = make(map[*websocket.Conn]bool)
+var db *gorm.DB
 
 func wsHandler(c *gin.Context) {
 	conn, err := wsUpgrade.Upgrade(c.Writer, c.Request, nil)
@@ -28,8 +29,7 @@ func wsHandler(c *gin.Context) {
 		return
 	}
 	clients[conn] = true
-	t, _, err := conn.ReadMessage()
-	err = conn.WriteMessage(t, []byte("Connect success!!!!"))
+	err = conn.WriteJSON(getAvailableItem())
 	if err != nil {
 		conn.Close()
 		delete(clients, conn)
@@ -59,32 +59,30 @@ func connectDB() *gorm.DB {
 	return db
 }
 
-func getAllItems(db *gorm.DB) []model.Item {
+func getAllItems() []model.Item {
 	items := make([]model.Item, 0)
 	db.Table("items").Find(&items)
 	return items
 }
 
-func getAvailableItem(db *gorm.DB) []model.Item {
+func getAvailableItem() []model.Item {
 	items := make([]model.Item, 0)
 	db.Table("items").Where("is_available=true").Find(&items)
 	return items
 }
 
-func pickItem(db *gorm.DB, itemId int64) model.PickingResult {
+func pickItem(itemId int64) model.PickingResult {
 	item := model.Item{}
 	db.Table("items").Where("id=?", itemId).Find(&item)
 	pickedResult := item.IsAvailable
 	db.Table("items").Model(&item).Update("is_available", false)
-	go broadcastItemStatistics(getAvailableItem(db))
+	go broadcastItemStatistics(getAvailableItem())
 	return model.PickingResult{
 		ItemId:        item.Id,
 		ItemName:      item.Name,
 		PickedSuccess: pickedResult,
 	}
 }
-
-var db *gorm.DB
 
 func main() {
 	db = connectDB()
@@ -98,12 +96,12 @@ func main() {
 	router.GET("/ws", wsHandler)
 
 	router.GET("/items", func(context *gin.Context) {
-		context.JSONP(http.StatusOK, getAllItems(db))
+		context.JSONP(http.StatusOK, getAllItems())
 	})
 
 	router.GET("/picking/:itemId", func(context *gin.Context) {
 		itemId, _ := strconv.ParseInt(context.Param("itemId"), 10, 32)
-		context.JSONP(http.StatusOK, pickItem(db, itemId))
+		context.JSONP(http.StatusOK, pickItem(itemId))
 	})
 
 	err := router.Run()

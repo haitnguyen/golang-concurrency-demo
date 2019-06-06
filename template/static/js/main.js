@@ -30,7 +30,7 @@ async function initializeItemList() {
     try {
         const data = await fetch('http://localhost:8080/items');
         const items = await data.json();
-        items.forEach(item => createItem(item.Id));
+        items.forEach(item => createItem(item.id));
     } catch (e) {
         console.error(e);
     }

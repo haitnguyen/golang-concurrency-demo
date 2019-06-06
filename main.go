@@ -2,6 +2,8 @@ package main
 
 import (
 	"./model"
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -26,29 +28,25 @@ func wsHandler(c *gin.Context) {
 		return
 	}
 	clients[conn] = true
-	for {
-		t, msg, err := conn.ReadMessage()
-		fmt.Println(string(msg))
-		if err != nil {
-			break
-		}
-		go broadcastMsg(conn, msg, t)
-	}
-}
-
-func broadcastMsg(conn *websocket.Conn, msg []byte, msgType int) {
-	for client := range clients {
-		if conn != client {
-			go writeMsg(client, msg, msgType)
-		}
-	}
-}
-
-func writeMsg(client *websocket.Conn, msg []byte, msgType int) {
-	err := client.WriteMessage(msgType, msg)
+	t, _, err := conn.ReadMessage()
+	err = conn.WriteMessage(t, []byte("Connect success!!!!"))
 	if err != nil {
-		client.Close()
-		delete(clients, client)
+		conn.Close()
+		delete(clients, conn)
+	}
+}
+
+func broadcastItemStatistics(items []model.Item) {
+	buf := new(bytes.Buffer)
+	err := binary.Write(buf, binary.LittleEndian, items)
+	if err != nil {
+		fmt.Println("binary.Write failed:", err)
+	}
+	for client := range clients {
+		err = client.WriteJSON(items)
+		if err != nil {
+			fmt.Println("WriteJSON failed:", err)
+		}
 	}
 }
 
@@ -63,20 +61,26 @@ func connectDB() *gorm.DB {
 
 func getAllItems(db *gorm.DB) []model.Item {
 	items := make([]model.Item, 0)
-	db.Table("items").Where("is_available=true AND amount > 0").Find(&items)
+	db.Table("items").Find(&items)
+	return items
+}
+
+func getAvailableItem(db *gorm.DB) []model.Item {
+	items := make([]model.Item, 0)
+	db.Table("items").Where("is_available=true").Find(&items)
 	return items
 }
 
 func pickItem(db *gorm.DB, itemId int64) model.PickingResult {
 	item := model.Item{}
 	db.Table("items").Where("id=?", itemId).Find(&item)
-	remainingItem := item.Amount
-	item.Amount = remainingItem - 1
-	go db.Table("items").Save(&item)
+	pickedResult := item.IsAvailable
+	db.Table("items").Model(&item).Update("is_available", false)
+	go broadcastItemStatistics(getAvailableItem(db))
 	return model.PickingResult{
 		ItemId:        item.Id,
 		ItemName:      item.Name,
-		PickedSuccess: item.IsAvailable && remainingItem >= 0,
+		PickedSuccess: pickedResult,
 	}
 }
 
@@ -99,7 +103,6 @@ func main() {
 
 	router.GET("/picking/:itemId", func(context *gin.Context) {
 		itemId, _ := strconv.ParseInt(context.Param("itemId"), 10, 32)
-
 		context.JSONP(http.StatusOK, pickItem(db, itemId))
 	})
 

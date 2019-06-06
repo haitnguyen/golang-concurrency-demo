@@ -37,4 +37,15 @@ async function initializeItemList() {
 
 }
 
+async function initWS() {
+    const url = 'ws://localhost:8080/ws';
+    const c = new WebSocket(url);
+    c.onmessage = printItemStatistics
+}
+
+function printItemStatistics(body) {
+    document.querySelector("#output").append(body.data + "\n");
+}
+
 initializeItemList();
+initWS();

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+.movable {
+  width: 100px;
+  height: 100px;
+  /* background: red;  */
+  position: relative;
+  -webkit-animation: mymove 5s infinite; /* Safari 4.0 - 8.0 */
+  animation: mymove 2s infinite;
+  background-image: url('./static/images/1_yh90bW8jL4f8pOTZTvbzqw.png');
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+/* Safari 4.0 - 8.0 */
+@-webkit-keyframes mymove {
+  from {left: 0px;}
+  to {left: 200px;}
+}
+
+@keyframes mymove {
+  /* from {left: 0px;}
+  to {left: 1000px;} */
+  0%   {left: 0px;}
+  25%  {left: 500px;}
+  50% {left: 1000px;}
+  75% {left: 500px;}
+  100% {left: 0px;}
+}
+
+@keyframes mynewmove {
+  /* from {left: 0px;}
+  to {left: 1000px;} */
+  0%   {left: 0px;}
+  25%  {top: 50px;}
+  50% {left: 1000px;}
+  75% {top: 120px;}
+  100% {left: 0px;}
+}
+</style>
+</head>
+<body>
+<div id="container">
+
+</div>
+<script src="./static/js/main.js"></script>
+</body>
+</html>

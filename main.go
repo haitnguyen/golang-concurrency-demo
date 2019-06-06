@@ -53,7 +53,8 @@ func writeMsg(client *websocket.Conn, msg []byte, msgType int) {
 }
 
 func connectDB() *gorm.DB {
-	db, err := gorm.Open("postgres", "host=localhost port=5432 user=postgres dbname=gorm password=123456 sslmode=disable search_path=myschema")
+	//db, err := gorm.Open("postgres", "host=localhost port=5432 user=postgres dbname=gorm password=123456 sslmode=disable search_path=myschema")
+	db, err := gorm.Open("postgres", "host=localhost port=5432 user=postgres dbname=postgres password=postgres sslmode=disable")
 	if err != nil {
 		log.Fatal("Server execute error: " + err.Error())
 	}
@@ -62,28 +63,21 @@ func connectDB() *gorm.DB {
 
 func getAllItems(db *gorm.DB) []model.Item {
 	items := make([]model.Item, 0)
-	db.Table("item").Find(&items)
+	db.Table("items").Where("is_available=true AND amount > 0").Find(&items)
 	return items
 }
 
-func pickItem(db *gorm.DB) []int {
-	ids := make([]int, 0)
-	db.Table("item").Pluck("id", &ids)
-	return ids
-}
-
-func getItems() []model.Item {
-	item1 := model.Item{
-		Id:   1,
-		Name: "abc",
+func pickItem(db *gorm.DB, itemId int64) model.PickingResult {
+	item := model.Item{}
+	db.Table("items").Where("id=?", itemId).Find(&item)
+	remainingItem := item.Amount
+	item.Amount = remainingItem - 1
+	go db.Table("items").Save(&item)
+	return model.PickingResult{
+		ItemId:        item.Id,
+		ItemName:      item.Name,
+		PickedSuccess: item.IsAvailable && remainingItem >= 0,
 	}
-
-	item2 := model.Item{
-		Id:   2,
-		Name: "cdf",
-	}
-
-	return []model.Item{item1, item2}
 }
 
 var db *gorm.DB
@@ -91,9 +85,6 @@ var db *gorm.DB
 func main() {
 	db = connectDB()
 	db.AutoMigrate(&model.Item{})
-	//getAllItems(db)
-	//pickItem(db)
-	//homepageViewPath := "home.html"
 	router := gin.Default()
 	router.LoadHTMLFiles("template/running-square.html")
 	router.Static("/static", "./template/static")
@@ -103,21 +94,17 @@ func main() {
 	router.GET("/ws", wsHandler)
 
 	router.GET("/items", func(context *gin.Context) {
-		context.JSONP(http.StatusOK, getItems())
+		context.JSONP(http.StatusOK, getAllItems(db))
 	})
 
 	router.GET("/picking/:itemId", func(context *gin.Context) {
 		itemId, _ := strconv.ParseInt(context.Param("itemId"), 10, 32)
 
-		context.JSONP(http.StatusOK, checkingResult(itemId))
+		context.JSONP(http.StatusOK, pickItem(db, itemId))
 	})
 
 	err := router.Run()
 	if err != nil {
 		log.Fatal("Server execute error: " + err.Error())
 	}
-}
-
-func checkingResult(itemId int64) bool {
-	return itemId%2 == 0
 }

@@ -30,11 +30,22 @@ async function initializeItemList() {
     try {
         const data = await fetch('http://localhost:8080/items');
         const items = await data.json();
-        items.forEach(item => createItem(item.Id));
+        items.forEach(item => createItem(item.id));
     } catch (e) {
         console.error(e);
     }
 
 }
 
+async function initWS() {
+    const url = 'ws://localhost:8080/ws';
+    const c = new WebSocket(url);
+    c.onmessage = printItemStatistics
+}
+
+function printItemStatistics(body) {
+    document.querySelector("#output").append(body.data + "\n");
+}
+
 initializeItemList();
+initWS();

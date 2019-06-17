@@ -2,6 +2,8 @@ package main
 
 import (
 	"./model"
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -18,6 +20,7 @@ var wsUpgrade = websocket.Upgrader{
 }
 
 var clients = make(map[*websocket.Conn]bool)
+var db *gorm.DB
 
 func wsHandler(c *gin.Context) {
 	conn, err := wsUpgrade.Upgrade(c.Writer, c.Request, nil)
@@ -26,29 +29,24 @@ func wsHandler(c *gin.Context) {
 		return
 	}
 	clients[conn] = true
-	for {
-		t, msg, err := conn.ReadMessage()
-		fmt.Println(string(msg))
-		if err != nil {
-			break
-		}
-		go broadcastMsg(conn, msg, t)
-	}
-}
-
-func broadcastMsg(conn *websocket.Conn, msg []byte, msgType int) {
-	for client := range clients {
-		if conn != client {
-			go writeMsg(client, msg, msgType)
-		}
-	}
-}
-
-func writeMsg(client *websocket.Conn, msg []byte, msgType int) {
-	err := client.WriteMessage(msgType, msg)
+	err = conn.WriteJSON(getAvailableItem())
 	if err != nil {
-		client.Close()
-		delete(clients, client)
+		conn.Close()
+		delete(clients, conn)
+	}
+}
+
+func broadcastItemStatistics(items []model.Item) {
+	buf := new(bytes.Buffer)
+	err := binary.Write(buf, binary.LittleEndian, items)
+	if err != nil {
+		fmt.Println("binary.Write failed:", err)
+	}
+	for client := range clients {
+		err = client.WriteJSON(items)
+		if err != nil {
+			fmt.Println("WriteJSON failed:", err)
+		}
 	}
 }
 
@@ -61,26 +59,30 @@ func connectDB() *gorm.DB {
 	return db
 }
 
-func getAllItems(db *gorm.DB) []model.Item {
+func getAllItems() []model.Item {
 	items := make([]model.Item, 0)
-	db.Table("items").Where("is_available=true AND amount > 0").Find(&items)
+	db.Table("items").Find(&items)
 	return items
 }
 
-func pickItem(db *gorm.DB, itemId int64) model.PickingResult {
+func getAvailableItem() []model.Item {
+	items := make([]model.Item, 0)
+	db.Table("items").Where("is_available=true").Find(&items)
+	return items
+}
+
+func pickItem(itemId int64) model.PickingResult {
 	item := model.Item{}
 	db.Table("items").Where("id=?", itemId).Find(&item)
-	remainingItem := item.Amount
-	item.Amount = remainingItem - 1
-	go db.Table("items").Save(&item)
+	pickedResult := item.IsAvailable
+	db.Table("items").Model(&item).Update("is_available", false)
+	go broadcastItemStatistics(getAvailableItem())
 	return model.PickingResult{
 		ItemId:        item.Id,
 		ItemName:      item.Name,
-		PickedSuccess: item.IsAvailable && remainingItem >= 0,
+		PickedSuccess: pickedResult,
 	}
 }
-
-var db *gorm.DB
 
 func main() {
 	db = connectDB()
@@ -94,13 +96,12 @@ func main() {
 	router.GET("/ws", wsHandler)
 
 	router.GET("/items", func(context *gin.Context) {
-		context.JSONP(http.StatusOK, getAllItems(db))
+		context.JSONP(http.StatusOK, getAllItems())
 	})
 
 	router.GET("/picking/:itemId", func(context *gin.Context) {
 		itemId, _ := strconv.ParseInt(context.Param("itemId"), 10, 32)
-
-		context.JSONP(http.StatusOK, pickItem(db, itemId))
+		context.JSONP(http.StatusOK, pickItem(itemId))
 	})
 
 	err := router.Run()
